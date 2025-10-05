@@ -8,10 +8,10 @@ var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
     .ConfigureServices(services =>
     {
-        // Application Insights para Functions Isolated
+        services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        // --- Configuração do Cliente Elasticsearch (cliente moderno) ---
+        // Configuração do Cliente Elasticsearch
         var uri = Environment.GetEnvironmentVariable("ElasticsearchUri")
                  ?? throw new InvalidOperationException("Variável de ambiente 'ElasticsearchUri' não definida.");
         var apiKey = Environment.GetEnvironmentVariable("ElasticsearchApiKey")
@@ -22,7 +22,6 @@ var host = new HostBuilder()
             .DefaultIndex("jogos-index");
 
         services.AddSingleton(new ElasticsearchClient(settings));
-        // --- Fim da Configuração ---
     })
     .Build();
 
