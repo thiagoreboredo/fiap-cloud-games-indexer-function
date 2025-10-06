@@ -1,113 +1,79 @@
-trigger:
-- main # Gatilho para commits na branch main
+name: $(BuildDefinitionName)_$(Date:yyyyMMdd)$(Rev:.rrr)
 
-pool: 'Default'
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - .gitignore
+
+pool: 'Default' # Seu agente self-hosted no Windows 11
 
 variables:
   azureSubscription: 'Acimel - PROD(8ad60e49-3122-49d8-b64e-1e7f12380229)'
   functionAppName: 'fiap-indexer-function'
-  projectPath: '$(System.DefaultWorkingDirectory)/IndexerFunction/IndexerFunction.csproj'
+  projectPath: 'IndexerFunction/IndexerFunction.csproj' # Caminho relativo ao root do repositório
   buildConfiguration: 'Release'
   dotnetVersion: '8.x'
 
-stages:
-- stage: Build
-  displayName: 'Build e Publicação do Projeto'
-  jobs:
-  - job: Build
-    displayName: 'Build'
-    steps:
-    - task: UseDotNet@2
-      displayName: 'Usar .NET $(dotnetVersion)'
-      inputs:
-        packageType: 'sdk'
-        version: '$(dotnetVersion)'
+steps:
+- checkout: self
 
-    - task: DotNetCoreCLI@2
-      displayName: 'Restaurar pacotes NuGet'
-      inputs:
-        command: 'restore'
-        projects: '$(projectPath)'
-        feedsToUse: 'select'
+- task: UseDotNet@2
+  displayName: 'Usar .NET $(dotnetVersion)'
+  inputs:
+    packageType: 'sdk'
+    version: '$(dotnetVersion)'
 
-    - task: DotNetCoreCLI@2
-      displayName: 'Publicar a Função'
-      inputs:
-        command: 'publish'
-        publishWebProjects: false
-        projects: '$(projectPath)'
-        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish_output'
-        zipAfterPublish: false
+- task: DotNetCoreCLI@2
+  displayName: 'Restaurar pacotes NuGet'
+  inputs:
+    command: 'restore'
+    projects: '$(projectPath)'
+    feedsToUse: 'select' # Ajuste se usar feeds NuGet customizados
 
-    - task: ArchiveFiles@2
-      displayName: 'Compactar Artefatos'
-      inputs:
-        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/publish_output'
-        includeRootFolder: false
-        archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/$(functionAppName).zip'
-        replaceExistingArchive: true
+- task: DotNetCoreCLI@2
+  displayName: 'Build'
+  inputs:
+    command: 'build'
+    projects: '$(projectPath)'
+    arguments: '--configuration $(buildConfiguration)'
 
-    - task: PublishBuildArtifacts@1
-      displayName: 'Publicar Artefato'
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(functionAppName).zip'
-        ArtifactName: 'functionapp'
-        publishLocation: 'Container'
+- task: DotNetCoreCLI@2
+  displayName: 'Publicar a Função'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: '$(projectPath)'
+    arguments: '--configuration $(buildConfiguration) --output $(System.ArtifactsDirectory)'
+    zipAfterPublish: true # Gera o ZIP automaticamente
 
-    # Adicionando um passo de validação para verificar o ZIP
-    - task: PowerShell@2
-      displayName: 'Validar arquivo ZIP gerado'
-      inputs:
-        targetType: 'inline'
-        script: |
-          Write-Host "Verificando se o ZIP existe: $(Build.ArtifactStagingDirectory)/$(functionAppName).zip"
-          if (Test-Path "$(Build.ArtifactStagingDirectory)/$(functionAppName).zip") {
-            Write-Host "ZIP encontrado!"
-          } else {
-            Write-Error "ZIP não encontrado!"
-            exit 1
-          }
+- task: PowerShell@2
+  displayName: 'Validar arquivo ZIP gerado'
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Verificando ZIPs em: $(System.ArtifactsDirectory)"
+      Get-ChildItem -Path "$(System.ArtifactsDirectory)" -Filter "*.zip" -Recurse | ForEach-Object { Write-Host "ZIP encontrado: $($_.FullName)" }
+      if (-not (Test-Path "$(System.ArtifactsDirectory)/*.zip")) {
+        Write-Error "Nenhum ZIP encontrado!"
+        exit 1
+      }
 
-- stage: Deploy
-  displayName: 'Deploy da Azure Function'
-  dependsOn: Build
-  condition: succeeded()
-  jobs:
-  - deployment: Deploy
-    displayName: 'Deploy'
-    environment: 'production'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - task: DownloadBuildArtifacts@1
-            displayName: 'Baixar Artefato'
-            inputs:
-              buildType: 'current'
-              downloadType: 'single'
-              artifactName: 'functionapp'
-              downloadPath: '$(Pipeline.Workspace)'
+- task: AzureFunctionApp@2
+  displayName: 'Deploy da Azure Function App'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    appType: 'functionApp'
+    appName: '$(functionAppName)'
+    package: '$(System.ArtifactsDirectory)/*.zip'
+    deploymentMethod: 'zipDeploy'
 
-          # Validação para confirmar que o ZIP foi baixado
-          - task: PowerShell@2
-            displayName: 'Validar download do ZIP'
-            inputs:
-              targetType: 'inline'
-              script: |
-                Write-Host "Verificando se o ZIP foi baixado: $(Pipeline.Workspace)/functionapp/$(functionAppName).zip"
-                if (Test-Path "$(Pipeline.Workspace)/functionapp/$(functionAppName).zip") {
-                  Write-Host "ZIP baixado com sucesso!"
-                } else {
-                  Write-Error "ZIP não encontrado no caminho de deploy!"
-                  exit 1
-                }
-
-          - task: AzureFunctionApp@2
-            displayName: 'Deploy da Azure Function App'
-            inputs:
-              azureSubscription: '$(azureSubscription)'
-              appType: 'functionApp'
-              appName: '$(functionAppName)'
-              package: '$(Pipeline.Workspace)/functionapp/$(functionAppName).zip'
-              deploymentMethod: 'zipDeploy'
+- task: AzureAppServiceManage@0
+  displayName: 'Reiniciar Azure Function App'
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    Action: 'Restart Azure App Service'
+    WebAppName: '$(functionAppName)'
