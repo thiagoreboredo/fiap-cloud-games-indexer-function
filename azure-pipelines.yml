@@ -23,6 +23,7 @@ stages:
         packageType: 'sdk'
         version: '$(dotnetVersion)'
 
+    # 1. Publica a função (sem compactar ainda)
     - task: DotNetCoreCLI@2
       displayName: 'Publicar a Função'
       inputs:
@@ -30,12 +31,23 @@ stages:
         publishWebProjects: false
         projects: '$(projectPath)'
         arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
-        zipAfterPublish: true
+        zipAfterPublish: false
 
+    # 2. Compacta a saída da publicação em um arquivo .zip
+    - task: ArchiveFiles@2
+      displayName: 'Compactar Artefatos'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(functionAppName).zip'
+        replaceExistingArchive: true
+
+    # 3. Publica o arquivo .zip gerado
     - task: PublishBuildArtifacts@1
       displayName: 'Publicar Artefato'
       inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(functionAppName).zip'
         ArtifactName: 'functionapp'
 
 - stage: Deploy
