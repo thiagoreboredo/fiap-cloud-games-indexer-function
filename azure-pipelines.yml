@@ -1,0 +1,54 @@
+trigger:
+- main # Gatilho para iniciar o pipeline em commits na branch main
+
+pool: 'Default'
+
+variables:
+  azureSubscription: 'Acimel - PROD(8ad60e49-3122-49d8-b64e-1e7f12380229)'
+  functionAppName: 'fiap-indexer-function'
+  projectPath: '$(System.DefaultWorkingDirectory)/IndexerFunction.csproj'
+  buildConfiguration: 'Release'
+  dotnetVersion: '8.x'
+
+stages:
+- stage: Build
+  displayName: 'Build e Publicação do Projeto'
+  jobs:
+  - job: Build
+    displayName: 'Build'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Usar .NET $(dotnetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Publicar a Função'
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        projects: '$(projectPath)'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        zipAfterPublish: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publicar Artefato'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'functionapp'
+
+- stage: Deploy
+  displayName: 'Deploy da Azure Function'
+  dependsOn: Build
+  jobs:
+  - job: Deploy
+    displayName: 'Deploy'
+    steps:
+    - task: AzureFunctionApp@2
+      displayName: 'Deploy da Azure Function App'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        appType: 'functionApp'
+        appName: '$(functionAppName)'
+        package: '$(Pipeline.Workspace)/functionapp/**/*.zip'
