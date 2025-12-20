@@ -1,38 +1,56 @@
-# FIAP Cloud Games - Indexer Function
+# FIAP Cloud Games - Indexer Worker ⚙️
 
-Esta Azure Function faz parte de um projeto de microserviços e tem como responsabilidade indexar informações de jogos no Elasticsearch.
+Este componente é o motor de processamento assíncrono da plataforma **FIAP Cloud Games (FCG)**. Sua função principal é consumir eventos de mudança de estado provenientes do catálogo de jogos e garantir a sincronização em tempo real com o **Elasticsearch**.
 
-## Funcionalidade
+Na **Fase 4**, este projeto passou por uma reengenharia completa, deixando de ser uma Azure Function para se tornar um **Worker Service** nativo, otimizado para orquestração em **Kubernetes (AKS)**.
 
-A função é acionada por uma mensagem no **Azure Service Bus**.
+## 🚀 Evoluções Técnicas (Fase 4)
 
-1.  **Gatilho (Trigger):** A função é inscrita no tópico `jogo-atualizado-topic` através da subscription `elasticsearch-indexer-subscription`.
-2.  **Ação:** Ao receber uma mensagem, ela desserializa o conteúdo para um objeto `JogoDocument` e o indexa (ou atualiza, caso já exista) no índice `jogos-index` do Elasticsearch.
+A modernização deste serviço incluiu requisitos fundamentais de arquitetura orientada a eventos e escalabilidade:
 
-## Tecnologias Utilizadas
+- **Mudança de Paradigma**: Transição de *Serverless* (Azure Function) para *Worker Service* (.NET Generic Host), permitindo maior controle sobre o ciclo de vida do processo e consumo de recursos no Kubernetes.
+- **Mensageria com RabbitMQ**: Implementação de consumo assíncrono utilizando **MassTransit** integrado ao **RabbitMQ**, substituindo o Azure Service Bus para uma arquitetura multi-cloud e on-premises.
+- **Docker de Alta Performance**: Uso da imagem base `aspnet:8.0-alpine`, resultando em um dos menores artefatos do ecossistema, ideal para escalonamento rápido (Rapid Scaling).
+- **Segurança de Execução**: Configuração de privilégios mínimos com usuário não-root (`USER $APP_UID`), protegendo o ambiente contra vulnerabilidades de runtime.
+- **Pronto para Kubernetes**: Preparado para deploy no **AKS** com suporte a **HPA (Horizontal Pod Autoscaler)**, garantindo que a indexação não se torne um gargalo durante grandes volumes de cadastros.
 
-* **Azure Functions** (.NET 8)
-* **Azure Service Bus** (Trigger)
-* **Elasticsearch** (Cliente .NET)
-* **Azure DevOps** (CI/CD)
+## 🛠 Tecnologias Utilizadas
 
-## Configuração
+- **Runtime**: .NET 8 (Worker Service)
+- **Mensageria**: RabbitMQ com MassTransit
+- **Motor de Busca**: Elasticsearch (Elastic Cloud)
+- **Conteinerização**: Docker (Multi-stage build / Alpine)
+- **Orquestração**: Kubernetes (AKS)
 
-Para executar a função localmente ou no Azure, as seguintes configurações de ambiente são necessárias (no `local.settings.json` ou nas configurações do Function App):
+## 🐳 Execução via Docker (Local)
 
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "ElasticsearchUri": "URL_DO_SEU_CLUSTER_ELASTIC",
-    "ElasticsearchApiKey": "API_KEY_DO_SEU_CLUSTER_ELASTIC",
-    "ServiceBusConnection": "CONNECTION_STRING_DO_SEU_SERVICE_BUS"
-  }
-}
+Certifique-se de possuir uma instância do RabbitMQ e do Elasticsearch disponíveis:
+
+```bash
+# Build da imagem
+docker build -t fiap-cloud-games-indexer-worker .
+
+# Execução do container (exemplo de variáveis)
+docker run \
+  -e ElasticsearchUri="Sua-Uri" \
+  -e ElasticsearchApiKey="Sua-Key" \
+  -e RabbitMQ__Host="localhost" \
+  fiap-cloud-games-indexer-worker
 ```
 
-## Pipeline de CI/CD
+## ⚓ Kubernetes e Resiliência
 
-O deploy deste projeto é automatizado através de um pipeline no Azure DevOps (`azure-pipelines.yml`). Qualquer commit na branch `main` irá disparar o processo de build e implantação automática no ambiente do Azure.
+O Worker opera no cluster AKS com foco em processamento garantido:
+- **Consumo Resiliente**: Utiliza políticas de Retry do MassTransit para garantir que falhas temporárias no Elasticsearch não causem perda de mensagens.
+- **Escalabilidade por Demanda**: O HPA pode ser configurado para criar novas instâncias do Worker conforme a fila de mensagens no RabbitMQ cresce, mantendo o índice sempre atualizado.
+
+## 📈 Monitoramento (APM)
+
+Integrado ao **New Relic**, o Worker fornece métricas de:
+- Tempo médio de processamento de cada mensagem.
+- Taxa de sucesso/erro de indexação.
+- Monitoramento de saúde da conexão com o RabbitMQ.
+
+---
+**FIAP - Arquitetura de Sistemas .NET com Azure**
+*Grupo 142*
