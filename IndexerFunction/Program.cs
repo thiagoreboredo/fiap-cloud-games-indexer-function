@@ -1,6 +1,6 @@
 using Elastic.Clients.Elasticsearch;
 using Elastic.Transport;
-using IndexerWorker;
+using Application.Services;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
